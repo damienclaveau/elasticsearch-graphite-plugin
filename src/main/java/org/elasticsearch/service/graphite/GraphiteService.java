@@ -1,24 +1,34 @@
 package org.elasticsearch.service.graphite;
 
+import java.io.IOException;
+import java.security.AccessController;
+import java.security.PrivilegedExceptionAction;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.admin.cluster.node.stats.NodeStats;
 import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
+//import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.ClusterService;
+//import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.node.DiscoveryNode;
-import org.elasticsearch.cluster.node.DiscoveryNodes;
-import org.elasticsearch.common.collect.Lists;
+//import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.component.Lifecycle;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
-import org.elasticsearch.index.service.IndexService;
-import org.elasticsearch.index.shard.service.IndexShard;
+import org.elasticsearch.index.IndexService;
+import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.indices.NodeIndicesStats;
+//import org.elasticsearch.node.Node;
 import org.elasticsearch.node.service.NodeService;
+//import org.elasticsearch.node.NodeBuilder;
+// ES permission you should check before doPrivileged() blocks
+import org.elasticsearch.SpecialPermission;
 
+import java.util.ArrayList;
+//import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -27,6 +37,7 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
     private final ClusterService clusterService;
     private final IndicesService indicesService;
     private NodeService nodeService;
+    //private final Client client;
     private final String graphiteHost;
     private final Integer graphitePort;
     private final TimeValue graphiteRefreshInternal;
@@ -40,6 +51,9 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
     @Inject public GraphiteService(Settings settings, ClusterService clusterService, IndicesService indicesService,
                                    NodeService nodeService) {
         super(settings);
+        System.out.println(settings.toDelimitedString(";".charAt(0)));
+        //Node node = NodeBuilder.nodeBuilder().node();
+        //this.client = node.client();
         this.clusterService = clusterService;
         this.indicesService = indicesService;
         this.nodeService = nodeService;
@@ -59,7 +73,19 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
 
     @Override
     protected void doStart() throws ElasticsearchException {
+        
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+          // unprivileged code such as scripts do not have SpecialPermission
+          sm.checkPermission(new SpecialPermission());
+        } 
+
         if (graphiteHost != null && graphiteHost.length() > 0) {
+//            graphiteReporterThread = AccessController.doPrivileged(new PrivilegedExceptionAction<Thread>() {
+//                public Thread run() throws IOException {
+//                    return EsExecutors.daemonThreadFactory(settings, "graphite_reporter").newThread(new GraphiteReporterThread(graphiteInclusionRegex, graphiteExclusionRegex));
+//                }
+//            });
             graphiteReporterThread = EsExecutors.daemonThreadFactory(settings, "graphite_reporter").newThread(new GraphiteReporterThread(graphiteInclusionRegex, graphiteExclusionRegex));
             graphiteReporterThread.start();
             StringBuilder sb = new StringBuilder();
@@ -78,6 +104,15 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
         }
         if (graphiteReporterThread != null) {
             graphiteReporterThread.interrupt();
+        }
+        //if (client != null) {
+        //    this.client.close();
+        //}
+        if (indicesService != null) {
+            this.indicesService.close();
+        }
+        if (clusterService != null) {
+            this.clusterService.close();
         }
         closed = true;
         logger.info("Graphite reporter stopped");
@@ -99,33 +134,20 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
         public void run() {
             while (!closed) {
                 DiscoveryNode node = clusterService.localNode();
-                if (node != null) {
-                    boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
-                    if (isClusterStarted) {
-                        DiscoveryNodes nodes = clusterService.state().nodes();
-                        // Here we are assuming that reporting metrics is useless until a Master node is elected in the Cluster
-                        if (nodes != null && (nodes.getMasterNode() != null)) {
-                            NodeIndicesStats nodeIndicesStats = indicesService.stats(false);
-                            CommonStatsFlags commonStatsFlags = new CommonStatsFlags().clear();
-                            NodeStats nodeStats = nodeService.stats(commonStatsFlags, true, true, true, true, true, true, true, true, true);
-                            List<IndexShard> indexShards = getIndexShards(indicesService);
-                    
-                            GraphiteReporter graphiteReporter = new GraphiteReporter(graphiteHost, graphitePort, graphitePrefix,
-                                nodeIndicesStats, indexShards, nodeStats, graphiteInclusionRegex, graphiteExclusionRegex);
-                            graphiteReporter.run();
-                        } else {
-                            if (logger.isDebugEnabled()) {
-                                logger.debug("[{}]/[{}] not triggering update, Cluster has no Master node, ", node.getId(), node.getName());
-                            }
-                        }
-                    } else {    
-                        if (logger.isDebugEnabled()) {
-                          logger.debug("[{}]/[{}] not triggering update, Cluster is not started", node.getId(), node.getName());
-                        }
-                    }
-                } else {    
-                    if (logger.isDebugEnabled()) {
-                      logger.debug("Not triggering update, Node is Null");
+                boolean isClusterStarted = clusterService.lifecycleState().equals(Lifecycle.State.STARTED);
+
+                if (isClusterStarted && node != null && node.isMasterNode()) {
+                    NodeIndicesStats nodeIndicesStats = indicesService.stats(false);
+                    CommonStatsFlags commonStatsFlags = new CommonStatsFlags().clear();
+                    NodeStats nodeStats = nodeService.stats(commonStatsFlags, true, true, true, true, true, true, true, true, true);
+                    List<IndexShard> indexShards = getIndexShards(indicesService);
+
+                    GraphiteReporter graphiteReporter = new GraphiteReporter(graphiteHost, graphitePort, graphitePrefix,
+                            nodeIndicesStats, indexShards, nodeStats, graphiteInclusionRegex, graphiteExclusionRegex);
+                    graphiteReporter.run();
+                } else {
+                    if (node != null) {
+                        logger.debug("[{}]/[{}] is not master node, not triggering update", node.getId(), node.getName());
                     }
                 }
 
@@ -138,15 +160,26 @@ public class GraphiteService extends AbstractLifecycleComponent<GraphiteService>
         }
 
         private List<IndexShard> getIndexShards(IndicesService indicesService) {
-            List<IndexShard> indexShards = Lists.newArrayList();
-            String[] indices = indicesService.indices().toArray(new String[]{});
-            for (String indexName : indices) {
-                IndexService indexService = indicesService.indexServiceSafe(indexName);
-                for (int shardId : indexService.shardIds()) {
-                    indexShards.add(indexService.shard(shardId));
+            List<IndexShard> indexShards = new ArrayList<IndexShard>();
+            for (IndexService indexService : indicesService) {
+            //for (String indexName : indicesService.indices().keySet()) {
+                 //IndexService indexService = indicesService.indexServiceSafe(indexName);
+                 for (int shardId : indexService.shardIds()) {
+                     indexShards.add(indexService.shard(shardId));
                 }
             }
             return indexShards;
         }
+//        private List<IndexShard> getIndexShards(Client client) {
+//            ImmutableOpenMap<String, IndexMetaData> indices = client.admin().cluster().prepareState().get().getState().getMetaData().getIndices();
+//            List<IndexShard> indexShards = new ArrayList<IndexShard>();
+//            for (String indexName: indices.keys().toArray(String.class)) {
+//                 IndexService indexService = indicesService.indexServiceSafe(indexName);
+//                 for (int shardId : indexService.shardIds()) {
+//                    indexShards.add(indexService.shard(shardId));
+//                }
+//            }
+//            return indexShards;
+//        }
     }
 }

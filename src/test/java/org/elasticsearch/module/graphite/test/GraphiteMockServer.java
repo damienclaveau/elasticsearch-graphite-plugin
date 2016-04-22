@@ -1,6 +1,6 @@
 package org.elasticsearch.module.graphite.test;
 
-import org.elasticsearch.common.collect.Lists;
+import com.google.common.collect.Lists;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,7 +26,7 @@ public class GraphiteMockServer extends Thread {
         try {
             server = new ServerSocket(port);
             Socket client;
-
+            
             while (!isClosed) {
                 if (server.isClosed()) return;
 
@@ -49,6 +49,7 @@ public class GraphiteMockServer extends Thread {
 
     public void close() throws Exception {
         isClosed = true;
-        server.close();
+        if (server != null)
+            server.close();
     }
 }

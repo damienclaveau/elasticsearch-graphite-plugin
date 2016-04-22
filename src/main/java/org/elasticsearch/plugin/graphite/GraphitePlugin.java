@@ -1,13 +1,21 @@
 package org.elasticsearch.plugin.graphite;
 
-import org.elasticsearch.common.collect.Lists;
-import org.elasticsearch.common.component.LifecycleComponent;
-import org.elasticsearch.plugins.AbstractPlugin;
+import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.service.graphite.GraphiteService;
+import org.elasticsearch.common.component.LifecycleComponent;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.repositories.RepositoriesModule;
 
+import java.util.ArrayList;
 import java.util.Collection;
 
-public class GraphitePlugin extends AbstractPlugin {
+public class GraphitePlugin extends Plugin {
+
+    private final Settings settings;
+
+    public GraphitePlugin(Settings settings) {
+        this.settings = settings;
+    }
 
     public String name() {
         return "graphite";
@@ -18,10 +26,19 @@ public class GraphitePlugin extends AbstractPlugin {
     }
 
     @SuppressWarnings("rawtypes")
-    @Override public Collection<Class<? extends LifecycleComponent>> services() {
-        Collection<Class<? extends LifecycleComponent>> services = Lists.newArrayList();
+    @Override public Collection<Class<? extends LifecycleComponent>> nodeServices() {
+        Collection<Class<? extends LifecycleComponent>> services = new ArrayList<>();
         services.add(GraphiteService.class);
         return services;
     }
+
+    @Override
+    public Settings additionalSettings() {
+        return Settings.EMPTY;
+    }
+
+    public void onModule(RepositoriesModule repositoriesModule) {
+    }
+    
 
 }

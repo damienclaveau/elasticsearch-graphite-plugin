@@ -1,0 +1,4 @@
+grant {
+permission org.elasticsearch.ThreadPermission "modifyArbitraryThreadGroup";
+permission java.lang.RuntimePermission "setDefaultUncaughtExceptionHandler";
+};
