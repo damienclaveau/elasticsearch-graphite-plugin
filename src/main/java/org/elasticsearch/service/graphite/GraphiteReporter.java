@@ -15,7 +15,16 @@ import org.elasticsearch.index.shard.DocsStats;
 import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.index.store.StoreStats;
 import org.elasticsearch.index.warmer.WarmerStats;
+import org.elasticsearch.index.cache.query.QueryCacheStats;
+import org.elasticsearch.index.cache.request.RequestCacheStats;
+import org.elasticsearch.index.engine.SegmentsStats;
+import org.elasticsearch.index.percolator.stats.PercolateStats;
+import org.elasticsearch.index.recovery.RecoveryStats;
+import org.elasticsearch.index.suggest.stats.SuggestStats;
+import org.elasticsearch.indices.breaker.AllCircuitBreakerStats;
+import org.elasticsearch.indices.breaker.CircuitBreakerStats;
 import org.elasticsearch.indices.NodeIndicesStats;
+import org.elasticsearch.search.suggest.completion.CompletionStats;
 import org.elasticsearch.monitor.fs.FsInfo;
 import org.elasticsearch.monitor.jvm.JvmStats;
 import org.elasticsearch.monitor.os.OsStats;
@@ -32,15 +41,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
-import org.elasticsearch.index.cache.query.QueryCacheStats;
-import org.elasticsearch.index.cache.request.RequestCacheStats;
-import org.elasticsearch.index.engine.SegmentsStats;
-import org.elasticsearch.index.percolator.stats.PercolateStats;
-import org.elasticsearch.index.recovery.RecoveryStats;
-import org.elasticsearch.index.suggest.stats.SuggestStats;
-import org.elasticsearch.indices.breaker.AllCircuitBreakerStats;
-import org.elasticsearch.indices.breaker.CircuitBreakerStats;
-import org.elasticsearch.search.suggest.completion.CompletionStats;
 
 public class GraphiteReporter {
 
@@ -243,7 +243,8 @@ public class GraphiteReporter {
 
     private void sendIndexShardStats() {
         for (IndexShard indexShard : indexShards) {
-            String type = buildMetricName("indexes.") + indexShard.shardId().index().name() + ".id." + indexShard.shardId().id();
+            String shardType = indexShard.routingEntry().primary() ? ".primary" : ".replica";
+            String type = buildMetricName("indexes.") + indexShard.shardId().index().name() + ".id." + indexShard.shardId().id() + shardType;
             sendIndexShardStats(type, indexShard);
         }
     }
@@ -261,13 +262,13 @@ public class GraphiteReporter {
         sendSuggestStats(type + ".suggest", indexShard.suggestStats());
         sendSegmentsStats(type + ".segments", indexShard.segmentStats());
         sendRecoveryStats(type + ".recovery", indexShard.recoveryStats());
-        sendQuerycacheStats(type + ".querycache", indexShard.queryCacheStats());       
+        sendQueryCacheStats(type + ".querycache", indexShard.queryCacheStats());
         sendFlushStats(type + ".flush", indexShard.flushStats());
         sendWarmerStats(type + ".warmer", indexShard.warmerStats());
     }
     
     private void sendNodeIndicesStats() {
-        String type = buildMetricName("node");                
+        String type = buildMetricName("indexes");
         sendSearchStats(type + ".search", nodeIndicesStats.getSearch());
         sendGetStats(type + ".get", nodeIndicesStats.getGet());
         sendDocsStats(type + ".docs", nodeIndicesStats.getDocs());
@@ -280,9 +281,9 @@ public class GraphiteReporter {
         sendSuggestStats(type + ".suggest", nodeIndicesStats.getSuggest());
         sendSegmentsStats(type + ".segments", nodeIndicesStats.getSegments());
         sendRecoveryStats(type + ".recovery", nodeIndicesStats.getRecoveryStats());
-        sendQuerycacheStats(type + ".querycache", nodeIndicesStats.getQueryCache());        
+        sendQueryCacheStats(type + ".querycache", nodeIndicesStats.getQueryCache());
         sendFlushStats(type + ".flush", nodeIndicesStats.getFlush());
-        sendRequestStats(type + ".request", nodeIndicesStats.getRequestCache());
+        sendRequestCacheStats(type + ".requestcache", nodeIndicesStats.getRequestCache());
         sendPercolateStats(type + ".percolate", nodeIndicesStats.getPercolate());
     }
 
@@ -330,7 +331,7 @@ public class GraphiteReporter {
         sendInt(type, "versionMapMemoryInBytes", segments.getVersionMapMemoryInBytes());
     }
 
-    private void sendRequestStats(String type, RequestCacheStats requestCache) {
+    private void sendRequestCacheStats(String type, RequestCacheStats requestCache) {
         sendInt(type, "evictions", requestCache.getEvictions());
         sendInt(type, "hitCount", requestCache.getHitCount());
         sendInt(type, "missCount", requestCache.getMissCount());
@@ -342,7 +343,7 @@ public class GraphiteReporter {
         sendInt(type, "currentAsTarget", recovery.currentAsTarget());
     }
 
-    private void sendQuerycacheStats(String type, QueryCacheStats queryCache) {
+    private void sendQueryCacheStats(String type, QueryCacheStats queryCache) {
         sendInt(type, "evictions", queryCache.getEvictions());
         sendInt(type, "hitCount", queryCache.getHitCount());
         sendInt(type, "missCount", queryCache.getMissCount());
@@ -378,6 +379,10 @@ public class GraphiteReporter {
         sendInt(type, "fetchCount", searchStats.getFetchCount());
         sendInt(type, "fetchTimeInMillis", searchStats.getFetchTimeInMillis());
         sendInt(type, "fetchCurrent", searchStats.getFetchCurrent());
+        sendInt(type, "queryCurrent", searchStats.getQueryCurrent());
+        sendInt(type, "scrollCount", searchStats.getScrollCount());
+        sendInt(type, "scrollTimeInMillis", searchStats.getScrollTimeInMillis());
+        sendInt(type, "scrollCurrent", searchStats.getScrollCurrent());
     }
 
     private void sendRefreshStats(String type, RefreshStats refreshStats) {

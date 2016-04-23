@@ -1,8 +1,5 @@
 package org.elasticsearch.service.graphite;
 
-import java.io.IOException;
-import java.security.AccessController;
-import java.security.PrivilegedExceptionAction;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.admin.cluster.node.stats.NodeStats;
 import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
